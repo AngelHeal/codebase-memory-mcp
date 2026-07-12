@@ -1,2 +1,2 @@
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential zlib1g-dev gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 libz-mingw-w64-dev make ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential zlib1g-dev gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 libz-mingw-w64-dev make ca-certificates nodejs npm && rm -rf /var/lib/apt/lists/*
