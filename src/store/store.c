@@ -4085,6 +4085,7 @@ static const ext_lang_entry_t ext_lang_table[] = {
     {".hcl", "HCL"},       {".tf", "HCL"},         {".sql", "SQL"},       {".erl", "Erlang"},
     {".swift", "Swift"},   {".dart", "Dart"},      {".groovy", "Groovy"}, {".pl", "Perl"},
     {".r", "R"},           {".scss", "SCSS"},      {".vue", "Vue"},       {".svelte", "Svelte"},
+    {".xml", "XML"},
     {NULL, NULL},
 };
 

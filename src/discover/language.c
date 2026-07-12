@@ -859,7 +859,7 @@ CBMLanguage cbm_language_for_extension(const char *ext) {
     }
 
     for (size_t i = 0; i < EXT_TABLE_SIZE; i++) {
-        if (strcmp(EXT_TABLE[i].ext, ext) == 0) {
+        if (strcasecmp(EXT_TABLE[i].ext, ext) == 0) {
             return EXT_TABLE[i].language;
         }
     }

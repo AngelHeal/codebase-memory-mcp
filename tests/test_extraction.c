@@ -7,6 +7,7 @@
  */
 #include "test_framework.h"
 #include "cbm.h"
+#include "discover/userconfig.h"
 #include "../src/foundation/compat.h" /* cbm_clock_gettime (wide-flat scaling guard) */
 #include <time.h>
 
@@ -2565,6 +2566,26 @@ TEST(xml_multiple_children) {
     PASS();
 }
 
+TEST(xml_name_attribute_extraction) {
+    cbm_userconfig_t *cfg = calloc(1, sizeof(cbm_userconfig_t));
+    cfg->xml_name_attrs_count = 1;
+    cfg->xml_name_attrs = calloc(1, sizeof(char*));
+    cfg->xml_name_attrs[0] = strdup("Name");
+    cbm_set_user_lang_config(cfg);
+
+    CBMFileResult *r =
+        extract("<?xml version=\"1.0\"?><Interceptor_IV_Frigate><SpaceUnit Name=\"Interceptor4_Frigate\"><Text_ID>TEXT_UNIT_INTERCEPTOR4_FRIGATE</Text_ID></SpaceUnit></Interceptor_IV_Frigate>", CBM_LANG_XML,
+                "t", "config.xml");
+    ASSERT_NOT_NULL(r);
+    ASSERT_FALSE(r->has_error);
+    ASSERT(has_def(r, "Class", "Interceptor4_Frigate"));
+    cbm_free_result(r);
+    cbm_userconfig_free(cfg);
+    cbm_set_user_lang_config(NULL);
+    PASS();
+}
+
+
 /* --- Markdown (4 tests) --- */
 
 TEST(markdown_atx_headings) {
@@ -3709,6 +3730,7 @@ SUITE(extraction) {
     RUN_TEST(xml_self_closing_tag);
     RUN_TEST(xml_empty_document);
     RUN_TEST(xml_multiple_children);
+    RUN_TEST(xml_name_attribute_extraction);
     RUN_TEST(markdown_atx_headings);
     RUN_TEST(markdown_setext_headings);
     RUN_TEST(markdown_heading_content);

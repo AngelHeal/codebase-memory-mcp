@@ -2,6 +2,7 @@
 #include "arena.h" // CBMArena, cbm_arena_alloc/strdup/sprintf
 #include "helpers.h"
 #include "lang_specs.h"
+#include "discover/userconfig.h"
 #include "foundation/constants.h"
 #include "foundation/platform.h" // safe_realloc (frees old on failure)
 #include "foundation/log.h"      // cbm_log_warn
@@ -3331,6 +3332,78 @@ static char *find_xml_element_name(CBMArena *a, TSNode node, const char *source)
         if (strcmp(ck, "start_tag") == 0 || strcmp(ck, "self_closing_tag") == 0 ||
             strcmp(ck, "STag") == 0 || strcmp(ck, "EmptyElemTag") == 0) {
             uint32_t tnc = ts_node_child_count(child);
+            
+            // First pass: try to find a configured or default attribute representing the name
+            for (uint32_t j = 0; j < tnc; j++) {
+                TSNode sub = ts_node_child(child, j);
+                const char *sk = ts_node_type(sub);
+                if (strcasecmp(sk, "Attribute") == 0) {
+                    TSNode name_node = ts_node_is_null(ts_node_child_by_field_name(sub, "name", 4)) ?
+                        cbm_find_child_by_kind(sub, "Name") : ts_node_child_by_field_name(sub, "name", 4);
+                    if (ts_node_is_null(name_node)) {
+                        uint32_t ac = ts_node_child_count(sub);
+                        for (uint32_t k = 0; k < ac; k++) {
+                            TSNode achild = ts_node_child(sub, k);
+                            const char *ack = ts_node_type(achild);
+                            if (strcasecmp(ack, "Name") == 0 || strcasecmp(ack, "attribute_name") == 0) {
+                                name_node = achild;
+                                break;
+                            }
+                        }
+                    }
+                    if (!ts_node_is_null(name_node)) {
+                        char *attr_name = cbm_node_text(a, name_node, source);
+                        if (attr_name) {
+                            const cbm_userconfig_t *ucfg = cbm_get_user_lang_config();
+                            bool is_matching_attr = false;
+                            if (ucfg && ucfg->xml_name_attrs_count > 0) {
+                                for (int k = 0; k < ucfg->xml_name_attrs_count; k++) {
+                                    if (strcasecmp(attr_name, ucfg->xml_name_attrs[k]) == 0) {
+                                        is_matching_attr = true;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                if (strcasecmp(attr_name, "Name") == 0 ||
+                                    strcasecmp(attr_name, "id") == 0 ||
+                                    strcasecmp(attr_name, "key") == 0) {
+                                    is_matching_attr = true;
+                                }
+                            }
+                            if (is_matching_attr) {
+                                TSNode val_node = ts_node_is_null(ts_node_child_by_field_name(sub, "value", 5)) ?
+                                    cbm_find_child_by_kind(sub, "AttValue") : ts_node_child_by_field_name(sub, "value", 5);
+                                if (ts_node_is_null(val_node)) {
+                                    uint32_t ac = ts_node_child_count(sub);
+                                    for (uint32_t k = 0; k < ac; k++) {
+                                        TSNode achild = ts_node_child(sub, k);
+                                        const char *ack = ts_node_type(achild);
+                                        if (strcasecmp(ack, "AttValue") == 0 || strcasecmp(ack, "attribute_value") == 0 || strcasecmp(ack, "string") == 0) {
+                                            val_node = achild;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!ts_node_is_null(val_node)) {
+                                    char *val_text = cbm_node_text(a, val_node, source);
+                                    if (val_text) {
+                                        size_t vlen = strlen(val_text);
+                                        if (vlen >= 2 && ((val_text[0] == '"' && val_text[vlen - 1] == '"') || (val_text[0] == '\'' && val_text[vlen - 1] == '\''))) {
+                                            val_text[vlen - 1] = '\0';
+                                            val_text++;
+                                        }
+                                        if (val_text[0] != '\0') {
+                                            return val_text;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Second pass: fallback to tag name
             for (uint32_t j = 0; j < tnc; j++) {
                 TSNode tag = ts_node_child(child, j);
                 const char *tk = ts_node_type(tag);

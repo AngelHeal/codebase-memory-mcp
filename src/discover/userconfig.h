@@ -29,6 +29,8 @@ typedef struct {
 typedef struct {
     cbm_userext_t *entries; /* heap-allocated array */
     int count;              /* number of entries */
+    char **xml_name_attrs;  /* heap-allocated list of attribute names */
+    int xml_name_attrs_count;
 } cbm_userconfig_t;
 
 /* ── API ────────────────────────────────────────────────────────── */

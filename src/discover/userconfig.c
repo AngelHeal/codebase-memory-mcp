@@ -158,6 +158,40 @@ static CBMLanguage lang_from_string(const char *s) {
 
 /* ── JSON parsing ────────────────────────────────────────────────── */
 
+static void parse_xml_name_attributes(yyjson_val *root, cbm_userconfig_t *cfg) {
+    if (!yyjson_is_obj(root)) {
+        return;
+    }
+    yyjson_val *attrs_val = yyjson_obj_get(root, "xml_name_attributes");
+    if (!attrs_val) {
+        return;
+    }
+    if (yyjson_is_arr(attrs_val)) {
+        size_t idx, max;
+        yyjson_val *val;
+        yyjson_arr_foreach(attrs_val, idx, max, val) {
+            const char *str = yyjson_get_str(val);
+            if (str && str[0]) {
+                /* Check if already in cfg->xml_name_attrs */
+                bool exists = false;
+                for (int i = 0; i < cfg->xml_name_attrs_count; i++) {
+                    if (strcasecmp(cfg->xml_name_attrs[i], str) == 0) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    char **tmp = realloc(cfg->xml_name_attrs, (size_t)(cfg->xml_name_attrs_count + 1) * sizeof(char *));
+                    if (tmp) {
+                        cfg->xml_name_attrs = tmp;
+                        cfg->xml_name_attrs[cfg->xml_name_attrs_count++] = strdup(str);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /*
  * Parse extra_extensions from a yyjson object root.
  * Appends valid entries to *entries / *count (growing via realloc).
@@ -232,7 +266,7 @@ static int parse_extra_extensions(yyjson_val *root, cbm_userext_t **entries, int
  * Silently ignores missing files. Logs warnings for corrupt JSON.
  * Returns 0 on success (or absent file), -1 on alloc failure.
  */
-static int load_config_file(const char *path, cbm_userext_t **entries, int *count) {
+static int load_config_file(const char *path, cbm_userconfig_t *cfg) {
     FILE *f = cbm_fopen(path, "rb");
     if (!f) {
         return 0; /* file absent — silently ignore */
@@ -278,7 +312,8 @@ static int load_config_file(const char *path, cbm_userext_t **entries, int *coun
     }
 
     yyjson_val *root = yyjson_doc_get_root(doc);
-    int rc = parse_extra_extensions(root, entries, count, path);
+    int rc = parse_extra_extensions(root, &cfg->entries, &cfg->count, path);
+    parse_xml_name_attributes(root, cfg);
     yyjson_doc_free(doc);
     return rc;
 }
@@ -291,9 +326,6 @@ cbm_userconfig_t *cbm_userconfig_load(const char *repo_path) {
         return NULL;
     }
 
-    cbm_userext_t *entries = NULL;
-    int count = 0;
-
     /* ── Step 1: Load global config ── */
     enum { PATH_BUF_SZ = 1280 };
     const char *cfg_base = cbm_app_config_dir();
@@ -301,29 +333,20 @@ cbm_userconfig_t *cbm_userconfig_load(const char *repo_path) {
     char global_path[PATH_BUF_SZ];
     snprintf(global_path, sizeof(global_path), "%s/codebase-memory-mcp/config.json", cfg_fallback);
 
-    if (load_config_file(global_path, &entries, &count) != 0) {
-        for (int i = 0; i < count; i++) {
-            free(entries[i].ext);
-        }
-        free(entries);
-        free(cfg);
+    if (load_config_file(global_path, cfg) != 0) {
+        cbm_userconfig_free(cfg);
         return NULL;
     }
 
-    int global_count = count; /* entries[0..global_count) are from global */
+    int global_count = cfg->count; /* entries[0..global_count) are from global */
 
     /* ── Step 2: Load project config ── */
     if (repo_path && repo_path[0]) {
         char project_path[PATH_BUF_SZ];
         snprintf(project_path, sizeof(project_path), "%s/.codebase-memory.json", repo_path);
 
-        if (load_config_file(project_path, &entries, &count) != 0) {
-            /* Free already-allocated entries */
-            for (int i = 0; i < count; i++) {
-                free(entries[i].ext);
-            }
-            free(entries);
-            free(cfg);
+        if (load_config_file(project_path, cfg) != 0) {
+            cbm_userconfig_free(cfg);
             return NULL;
         }
     }
@@ -335,6 +358,8 @@ cbm_userconfig_t *cbm_userconfig_load(const char *repo_path) {
      * and project (indices global_count..count), remove the global entry by
      * replacing it with the last global entry (order-insensitive dedup).
      */
+    cbm_userext_t *entries = cfg->entries;
+    int count = cfg->count;
     for (int p = global_count; p < count; p++) {
         for (int g = 0; g < global_count; g++) {
             if (entries[g].ext && strcmp(entries[g].ext, entries[p].ext) == 0) {
@@ -358,10 +383,7 @@ cbm_userconfig_t *cbm_userconfig_load(const char *repo_path) {
             entries[write_idx++] = entries[i];
         }
     }
-    count = write_idx;
-
-    cfg->entries = entries;
-    cfg->count = count;
+    cfg->count = write_idx;
     return cfg;
 }
 
@@ -370,7 +392,7 @@ CBMLanguage cbm_userconfig_lookup(const cbm_userconfig_t *cfg, const char *ext) 
         return CBM_LANG_COUNT;
     }
     for (int i = 0; i < cfg->count; i++) {
-        if (cfg->entries[i].ext && strcmp(cfg->entries[i].ext, ext) == 0) {
+        if (cfg->entries[i].ext && strcasecmp(cfg->entries[i].ext, ext) == 0) {
             return cfg->entries[i].lang;
         }
     }
@@ -385,5 +407,9 @@ void cbm_userconfig_free(cbm_userconfig_t *cfg) {
         free(cfg->entries[i].ext);
     }
     free(cfg->entries);
+    for (int i = 0; i < cfg->xml_name_attrs_count; i++) {
+        free(cfg->xml_name_attrs[i]);
+    }
+    free(cfg->xml_name_attrs);
     free(cfg);
 }
