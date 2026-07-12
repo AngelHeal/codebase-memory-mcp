@@ -1335,10 +1335,14 @@ static bool db_internal_project_name(const char *full_path, char *name_out, size
     cbm_project_t *projs = NULL;
     int n = 0;
     bool ok = false;
-    if (cbm_store_list_projects(st, &projs, &n) == CBM_STORE_OK && n == 1 && projs[0].name &&
-        projs[0].name[0]) {
-        snprintf(name_out, name_sz, "%s", projs[0].name);
-        ok = true;
+    if (cbm_store_list_projects(st, &projs, &n) == CBM_STORE_OK && n >= 1) {
+        for (int i = 0; i < n; i++) {
+            if (projs[i].name && projs[i].name[0] && strstr(projs[i].name, "::missed") == NULL) {
+                snprintf(name_out, name_sz, "%s", projs[i].name);
+                ok = true;
+                break;
+            }
+        }
     }
     cbm_store_free_projects(projs, n);
     if (ok && out_store) {
