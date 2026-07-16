@@ -192,6 +192,41 @@ static void parse_xml_name_attributes(yyjson_val *root, cbm_userconfig_t *cfg) {
     }
 }
 
+static void parse_xml_inheritance_tags(yyjson_val *root, cbm_userconfig_t *cfg) {
+    if (!yyjson_is_obj(root)) {
+        return;
+    }
+    yyjson_val *tags_val = yyjson_obj_get(root, "xml_inheritance_tags");
+    if (!tags_val) {
+        return;
+    }
+    if (yyjson_is_arr(tags_val)) {
+        size_t idx, max;
+        yyjson_val *val;
+        yyjson_arr_foreach(tags_val, idx, max, val) {
+            const char *str = yyjson_get_str(val);
+            if (str && str[0]) {
+                /* Check if already in cfg->xml_inheritance_tags */
+                bool exists = false;
+                for (int i = 0; i < cfg->xml_inheritance_tags_count; i++) {
+                    if (strcasecmp(cfg->xml_inheritance_tags[i], str) == 0) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    char **tmp = realloc(cfg->xml_inheritance_tags, (size_t)(cfg->xml_inheritance_tags_count + 1) * sizeof(char *));
+                    if (tmp) {
+                        cfg->xml_inheritance_tags = tmp;
+                        cfg->xml_inheritance_tags[cfg->xml_inheritance_tags_count++] = strdup(str);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 /*
  * Parse extra_extensions from a yyjson object root.
  * Appends valid entries to *entries / *count (growing via realloc).
@@ -314,6 +349,7 @@ static int load_config_file(const char *path, cbm_userconfig_t *cfg) {
     yyjson_val *root = yyjson_doc_get_root(doc);
     int rc = parse_extra_extensions(root, &cfg->entries, &cfg->count, path);
     parse_xml_name_attributes(root, cfg);
+    parse_xml_inheritance_tags(root, cfg);
     yyjson_doc_free(doc);
     return rc;
 }
@@ -411,5 +447,9 @@ void cbm_userconfig_free(cbm_userconfig_t *cfg) {
         free(cfg->xml_name_attrs[i]);
     }
     free(cfg->xml_name_attrs);
+    for (int i = 0; i < cfg->xml_inheritance_tags_count; i++) {
+        free(cfg->xml_inheritance_tags[i]);
+    }
+    free(cfg->xml_inheritance_tags);
     free(cfg);
 }

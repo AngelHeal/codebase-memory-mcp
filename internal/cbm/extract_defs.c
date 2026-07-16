@@ -3421,6 +3421,127 @@ static char *find_xml_element_name(CBMArena *a, TSNode node, const char *source)
     return NULL;
 }
 
+#define CBM_ISSPACE(c) ((c) == ' ' || (c) == '\t' || (c) == '\r' || (c) == '\n')
+
+static char *find_xml_tag_name(CBMArena *a, TSNode node, const char *source) {
+    uint32_t nc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < nc; i++) {
+        TSNode child = ts_node_child(node, i);
+        const char *ck = ts_node_type(child);
+        if (strcmp(ck, "start_tag") == 0 || strcmp(ck, "self_closing_tag") == 0 ||
+            strcmp(ck, "STag") == 0 || strcmp(ck, "EmptyElemTag") == 0) {
+            uint32_t tnc = ts_node_child_count(child);
+            for (uint32_t j = 0; j < tnc; j++) {
+                TSNode tag = ts_node_child(child, j);
+                const char *tk = ts_node_type(tag);
+                if (strcmp(tk, "tag_name") == 0 || strcmp(tk, "Name") == 0) {
+                    return cbm_node_text(a, tag, source);
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
+static char *find_xml_chardata_text(CBMArena *a, TSNode node, const char *source) {
+    TSNode content_node = cbm_find_child_by_kind(node, "content");
+    if (ts_node_is_null(content_node)) {
+        return NULL;
+    }
+    uint32_t nc = ts_node_child_count(content_node);
+    for (uint32_t i = 0; i < nc; i++) {
+        TSNode child = ts_node_child(content_node, i);
+        if (strcmp(ts_node_type(child), "CharData") == 0) {
+            char *text = cbm_node_text(a, child, source);
+            if (text) {
+                while (*text && CBM_ISSPACE((unsigned char)*text)) text++;
+                size_t len = strlen(text);
+                while (len > 0 && CBM_ISSPACE((unsigned char)text[len - 1])) {
+                    text[len - 1] = '\0';
+                    len--;
+                }
+                return text;
+            }
+        }
+    }
+    return NULL;
+}
+
+static const char **find_xml_base_classes(CBMArena *a, TSNode node, const char *source) {
+    TSNode content_node = ts_node_child_by_field_name(node, "content", 7);
+    if (ts_node_is_null(content_node)) {
+        content_node = cbm_find_child_by_kind(node, "content");
+    }
+    if (ts_node_is_null(content_node)) {
+        return NULL;
+    }
+
+    const cbm_userconfig_t *ucfg = cbm_get_user_lang_config();
+    if (!ucfg || ucfg->xml_inheritance_tags_count == 0) {
+        return NULL;
+    }
+
+    int count = 0;
+    uint32_t nc = ts_node_child_count(content_node);
+    for (uint32_t i = 0; i < nc; i++) {
+        TSNode child = ts_node_child(content_node, i);
+        if (strcmp(ts_node_type(child), "element") == 0) {
+            char *tag_name = find_xml_tag_name(a, child, source);
+            if (!tag_name) continue;
+
+            bool is_inheritance_tag = false;
+            for (int k = 0; k < ucfg->xml_inheritance_tags_count; k++) {
+                if (strcasecmp(tag_name, ucfg->xml_inheritance_tags[k]) == 0) {
+                    is_inheritance_tag = true;
+                    break;
+                }
+            }
+            if (is_inheritance_tag) {
+                count++;
+            }
+        }
+    }
+
+    if (count == 0) {
+        return NULL;
+    }
+
+    const char **bases = (const char **)cbm_arena_alloc(a, (size_t)(count + 1) * sizeof(const char *));
+    if (!bases) {
+        return NULL;
+    }
+
+    int idx = 0;
+    for (uint32_t i = 0; i < nc; i++) {
+        TSNode child = ts_node_child(content_node, i);
+        if (strcmp(ts_node_type(child), "element") == 0) {
+            char *tag_name = find_xml_tag_name(a, child, source);
+            if (!tag_name) continue;
+
+            bool is_inheritance_tag = false;
+            for (int k = 0; k < ucfg->xml_inheritance_tags_count; k++) {
+                if (strcasecmp(tag_name, ucfg->xml_inheritance_tags[k]) == 0) {
+                    is_inheritance_tag = true;
+                    break;
+                }
+            }
+
+            if (is_inheritance_tag) {
+                char *base_name = find_xml_chardata_text(a, child, source);
+                if (base_name && base_name[0] != '\0') {
+                    bases[idx++] = base_name;
+                }
+            }
+        }
+    }
+    bases[idx] = NULL;
+
+    if (idx == 0) {
+        return NULL;
+    }
+    return bases;
+}
+
 // Extract text from an atx_heading node (# Title).
 static char *extract_atx_heading_text(CBMArena *a, TSNode node, const char *source) {
     uint32_t nc = ts_node_child_count(node);
@@ -3547,6 +3668,20 @@ static bool extract_config_class_def(CBMExtractCtx *ctx, TSNode node, const char
         name = find_ini_section_name(a, node, ctx->source);
     } else if (ctx->language == CBM_LANG_XML && strcmp(kind, "element") == 0) {
         name = find_xml_element_name(a, node, ctx->source);
+        if (name && name[0]) {
+            CBMDefinition def;
+            memset(&def, 0, sizeof(def));
+            def.name = name;
+            def.qualified_name = cbm_fqn_compute(a, ctx->project, ctx->rel_path, qn_safe_segment(a, name));
+            def.label = label;
+            def.file_path = ctx->rel_path;
+            def.start_line = ts_node_start_point(node).row + TS_LINE_OFFSET;
+            def.end_line = ts_node_end_point(node).row + TS_LINE_OFFSET;
+            def.is_exported = true;
+            def.base_classes = find_xml_base_classes(a, node, ctx->source);
+            cbm_defs_push(&ctx->result->defs, a, def);
+        }
+        return true;
     } else if (ctx->language == CBM_LANG_MARKDOWN &&
                (strcmp(kind, "atx_heading") == 0 || strcmp(kind, "setext_heading") == 0)) {
         name = extract_markdown_heading_name(a, node, kind, ctx->source);

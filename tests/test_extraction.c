@@ -2585,6 +2585,45 @@ TEST(xml_name_attribute_extraction) {
     PASS();
 }
 
+TEST(xml_inheritance_extraction) {
+    cbm_userconfig_t *cfg = calloc(1, sizeof(cbm_userconfig_t));
+    cfg->xml_name_attrs_count = 1;
+    cfg->xml_name_attrs = calloc(1, sizeof(char*));
+    cfg->xml_name_attrs[0] = strdup("Name");
+    
+    cfg->xml_inheritance_tags_count = 1;
+    cfg->xml_inheritance_tags = calloc(1, sizeof(char*));
+    cfg->xml_inheritance_tags[0] = strdup("Variant_Of_Existing_Type");
+    cbm_set_user_lang_config(cfg);
+
+    CBMFileResult *r =
+        extract("<?xml version=\"1.0\"?><Interceptor_IV_Frigate><SpaceUnit Name=\"Interceptor4_Frigate\"><Variant_Of_Existing_Type>Generic_Frigate</Variant_Of_Existing_Type></SpaceUnit></Interceptor_IV_Frigate>", CBM_LANG_XML,
+                "t", "config.xml");
+    ASSERT_NOT_NULL(r);
+    ASSERT_FALSE(r->has_error);
+    ASSERT(has_def(r, "Class", "Interceptor4_Frigate"));
+    
+    // Find the definition and verify its base classes
+    bool found_base = false;
+    for (int i = 0; i < r->defs.count; i++) {
+        CBMDefinition *def = &r->defs.items[i];
+        if (strcmp(def->name, "Interceptor4_Frigate") == 0) {
+            ASSERT_NOT_NULL(def->base_classes);
+            ASSERT_STR_EQ(def->base_classes[0], "Generic_Frigate");
+            ASSERT_NULL(def->base_classes[1]);
+            found_base = true;
+            break;
+        }
+    }
+    ASSERT(found_base);
+
+    cbm_free_result(r);
+    cbm_userconfig_free(cfg);
+    cbm_set_user_lang_config(NULL);
+    PASS();
+}
+
+
 
 /* --- Markdown (4 tests) --- */
 
@@ -3731,6 +3770,7 @@ SUITE(extraction) {
     RUN_TEST(xml_empty_document);
     RUN_TEST(xml_multiple_children);
     RUN_TEST(xml_name_attribute_extraction);
+    RUN_TEST(xml_inheritance_extraction);
     RUN_TEST(markdown_atx_headings);
     RUN_TEST(markdown_setext_headings);
     RUN_TEST(markdown_heading_content);

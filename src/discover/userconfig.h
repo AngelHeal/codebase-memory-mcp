@@ -31,6 +31,8 @@ typedef struct {
     int count;              /* number of entries */
     char **xml_name_attrs;  /* heap-allocated list of attribute names */
     int xml_name_attrs_count;
+    char **xml_inheritance_tags;  /* heap-allocated list of XML inheritance tags */
+    int xml_inheritance_tags_count;
 } cbm_userconfig_t;
 
 /* ── API ────────────────────────────────────────────────────────── */
