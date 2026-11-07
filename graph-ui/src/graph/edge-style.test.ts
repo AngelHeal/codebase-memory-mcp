@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_EDGE_COLOR, EDGE_TYPE_COLORS, edgeColor, edgePhase, isDirectedEdge } from './edge-style';
 
 describe('shared edge appearance', () => {
+    it('preserves the fork inheritance color for XML and code relationships', () => {
+        expect(edgeColor('INHERITS')).toBe('#f97316');
+        expect(edgeColor(' inherits ')).toBe('#f97316');
+        expect(edgeColor('RELATIONSHIPS', ['INHERITS'])).toBe('#f97316');
+        expect(isDirectedEdge('INHERITS')).toBe(true);
+    });
     it('keeps equivalent type spelling and mixed aggregates honest', () => {
         expect(edgeColor('calls')).toBe(EDGE_TYPE_COLORS.CALLS);
         expect(edgeColor('http-calls')).toBe(EDGE_TYPE_COLORS.HTTP_CALLS);
